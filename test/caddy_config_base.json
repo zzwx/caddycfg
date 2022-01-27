@@ -1,0 +1,17 @@
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"myserver": {
+					"automatic_https": {
+						"skip": []
+					},
+					"listen": [
+						":443"
+					],
+					"routes": []
+				}
+			}
+		}
+	}
+}

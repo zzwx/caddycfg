@@ -1,0 +1,20 @@
+{
+	"admin": {
+		"listen": "localhost:20247"
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"myserver": {
+					"automatic_https": {
+						"skip": []
+					},
+					"listen": [
+						":443"
+					],
+					"routes": []
+				}
+			}
+		}
+	}
+}
