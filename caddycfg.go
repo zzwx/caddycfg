@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -169,6 +170,23 @@ type IDField struct {
 	Id string `json:"@id"`
 }
 
+type RoutConfigType struct {
+	Id    string `json:"@id"`
+	Match []struct {
+		Host []string `json:"host"`
+		Path []string `json:"path"`
+	} `json:"match"`
+	Handle []struct {
+		Handler   string `json:"handler"`
+		Transport struct {
+			Protocol string `json:"protocol"`
+		} `json:"transport"`
+		Upstreams []struct {
+			Dial string `json:"dial"`
+		} `json:"upstreams"`
+	} `json:"handle"`
+}
+
 // AddRoute ensures that configuration marked by unique route config "@id" field specified by routeId enters caddy's configuration.
 // A good candidate for routeId is a domain name.
 //
@@ -194,15 +212,35 @@ func (caddyCfg *CaddyCfg) AddRoute(serverKey string, routeId string, routeConfig
 
 	// Prepend config with "@id" by brutally forcing it into JSON, as caddyhttp.Route has no
 	// field for it.
-	cfg = strings.Replace(cfg, "{", fmt.Sprintf("{\n\t%v,", EncodeAtId(routeId)), 1)
+	cfg = strings.Replace(cfg, "{", fmt.Sprintf("{%v,", EncodeAtId(routeId)), 1)
 
 	current, err := caddyCfg.ConfigById(routeId)
 	if err == nil { // including errNotFoundID
 		if cfg == current {
+			// This is rare that they both simply be equal, as they seem to be marshalled differently by Caddy
+			// when requested.
 			return nil
 		} else {
-			_ = caddyCfg.DeleteById(routeId)
+			// We have to try to compare them structurally.
+			decCfg := json.NewDecoder(strings.NewReader(cfg))
+			var cfgJson RoutConfigType
+			err := decCfg.Decode(&cfgJson)
+			if err == nil {
+				decCurrent := json.NewDecoder(strings.NewReader(current))
+				var currentJson RoutConfigType
+				err := decCurrent.Decode(&currentJson)
+				if err == nil {
+					// Now we can compare two objects
+					if reflect.DeepEqual(cfgJson, currentJson) {
+						return nil
+					}
+				}
+			}
 		}
+	}
+
+	if current != "" {
+		_ = caddyCfg.DeleteById(routeId)
 	}
 
 	requestPatch, err := http.Post(

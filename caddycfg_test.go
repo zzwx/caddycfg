@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"sync"
 	"testing"
+	"time"
 )
 
 func ExampleEncodeAtId() {
@@ -171,7 +172,13 @@ func runWithinManagedCaddy(configFile string, configURL string, serverKey string
 
 func TestCaddyCfg_AddRouteConfig_Overwrite(t *testing.T) {
 	runWithinManagedEmptyCaddy("localhost:2019", "myserver", func(caddyCfg *CaddyCfg) {
-
+		for i := 0; i < 10; i++ {
+			err := caddyCfg.AddRoute("myserver", "this.com", ReverseProxyCaddyRouteConf(8080, []string{"this.com", "www.this.com"}, "/*"))
+			if err != nil {
+				t.Fatalf("%d %v", i, err)
+			}
+			time.Sleep(time.Millisecond)
+		}
 	})
 }
 
@@ -233,10 +240,12 @@ func ExampleJoinURLPath() {
 	fmt.Println(JoinURLPath("http://localhost:2019", "test"))
 	fmt.Println(JoinURLPath("http://localhost:2019/", "test"))
 	fmt.Println(JoinURLPath("http://localhost:2019/in", "test", "where", "to", "go"))
+	fmt.Println(JoinURLPath("http://localhost:2019/in", "test/where/to/go"))
 	fmt.Println(JoinURLPath("", "test"))
 	// Output:
 	// http://localhost:2019/test
 	// http://localhost:2019/test
+	// http://localhost:2019/in/test/where/to/go
 	// http://localhost:2019/in/test/where/to/go
 	// test
 }
