@@ -2,6 +2,7 @@ package caddycfg
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"sync"
@@ -16,11 +17,11 @@ func ExampleEncodeAtId() {
 }
 
 func TestReverseProxyCaddyRouteConf(t *testing.T) {
-	runWithinManagedDefaultCaddy(
-		"http://localhost:20259",
-		func(caddyInstance *CaddyHttpServerInstance) {
+	runWithinManagedEmptyCaddy(
+		"http://localhost:20259", "myserver",
+		func(caddyCfg *CaddyCfg) {
 			serverKey := "myserver"
-			err := caddyInstance.ReplaceRouteConfig(
+			err := caddyCfg.AddRoute(
 				serverKey,
 				"example.net",
 				ReverseProxyCaddyRouteConf(8080, []string{
@@ -31,7 +32,7 @@ func TestReverseProxyCaddyRouteConf(t *testing.T) {
 			if err != nil {
 				t.Errorf("%v", err)
 			}
-			err = caddyInstance.ReplaceRouteConfig(
+			err = caddyCfg.AddRoute(
 				serverKey,
 				"some.example.com",
 				ReverseProxyCaddyRouteConf(8081, []string{
@@ -41,7 +42,7 @@ func TestReverseProxyCaddyRouteConf(t *testing.T) {
 			if err != nil {
 				t.Errorf("%v", err)
 			}
-			err = caddyInstance.ReplaceRouteConfig(
+			err = caddyCfg.AddRoute(
 				serverKey,
 				"game.example.org",
 				ReverseProxyCaddyRouteConf(8082, []string{
@@ -51,7 +52,7 @@ func TestReverseProxyCaddyRouteConf(t *testing.T) {
 			if err != nil {
 				t.Errorf("%v", err)
 			}
-			err = caddyInstance.ReplaceRouteConfig(
+			err = caddyCfg.AddRoute(
 				serverKey,
 				"go.example.com",
 				ReverseProxyCaddyRouteConf(8083, []string{
@@ -61,7 +62,7 @@ func TestReverseProxyCaddyRouteConf(t *testing.T) {
 			if err != nil {
 				t.Errorf("%v", err)
 			}
-			c, err := caddyInstance.Config()
+			c, err := caddyCfg.Config()
 			if err != nil {
 				t.Errorf("%v", err)
 			}
@@ -117,18 +118,26 @@ func ExampleReverseProxyCaddyRouteConf() {
 
 var m sync.Mutex
 
-func runWithinManagedDefaultCaddy(configURL string, f func(caddyInstance *CaddyHttpServerInstance)) {
-	runWithinManagedCaddy("", configURL, f)
+// runWithinManagedEmptyCaddy calls runWithinManagedCaddy with empty configFile,
+// to run empty caddy, that will be enhanced with CaddyCfg.EmptyConfig(serverKey).
+//
+// configURL will become new configuration URL once caddy gets CaddyCfg.EmptyConfig configuration, to call f()
+// with the caddyCfg.
+func runWithinManagedEmptyCaddy(configURL string, serverKey string, f func(caddyCfg *CaddyCfg)) {
+	runWithinManagedCaddy("", configURL, serverKey, f)
 }
 
-// runWithinManagedCaddy runs a caddy server instance ("caddy run") with optional "--config" file,
-// then creates NewCaddyHttpServerInstance with the passed configURL, loads it with CaddyHttpServerInstance.EmptyConfig if no "--config" file is provided,
-// and executes f with created instance.
+// runWithinManagedCaddy runs a caddy server instance ("caddy run --config configFile"),
+// then creates NewCaddyCfg with the passed configURL and executes f with created *CaddyCfg.
 //
-// After finishing execution of f, it stops caddy server instance.
+// After finishing execution of f, it stops caddy server.
 //
-// With the sync.Mutex it makes sure to run just one caddy at a time per process.
-func runWithinManagedCaddy(configFile string, configURL string, f func(caddyInstance *CaddyHttpServerInstance)) {
+// A special case with configFile == "" is to loads empty caddy ("caddy run") with CaddyCfg.EmptyConfig(serverKey) if no "--config" file is provided,
+//
+//
+//
+// With the sync.Mutex it makes sure to run just one caddy server at a time per process.
+func runWithinManagedCaddy(configFile string, configURL string, serverKey string, f func(caddyCfg *CaddyCfg)) {
 	m.Lock()
 	defer m.Unlock()
 	config := []string{"run"}
@@ -140,15 +149,16 @@ func runWithinManagedCaddy(configFile string, configURL string, f func(caddyInst
 	if err != nil {
 		panic(err)
 	}
-	var caddyInstance = NewCaddyHttpServerInstance(configURL)
+	var caddyCfg = NewCaddyCfg(configURL)
 	if configFile == "" {
-		err := caddyInstance.UploadConfigToDefault(caddyInstance.EmptyConfig("myserver"))
+		base := BaseConfig(configURL, serverKey)
+		err := caddyCfg.UploadTo(DefaultConfigURL, base)
 		if err != nil {
 			panic(err)
 		}
 	}
 
-	f(caddyInstance)
+	f(caddyCfg)
 	if err := cmd.Process.Kill(); err == nil {
 		err := cmd.Wait()
 		if err != nil {
@@ -159,14 +169,23 @@ func runWithinManagedCaddy(configFile string, configURL string, f func(caddyInst
 	}
 }
 
-func TestCaddyHttpServerInstance_ReplaceRouteConfig(t *testing.T) {
+func TestCaddyCfg_AddRouteConfig_Overwrite(t *testing.T) {
+	runWithinManagedEmptyCaddy("localhost:2019", "myserver", func(caddyCfg *CaddyCfg) {
+
+	})
+}
+
+func TestCaddyCfg_AddRouteConfig(t *testing.T) {
 	runWithinManagedCaddy(
 		"./test/caddy_config_base_with_endpoint.json",
 		"http://localhost:20247",
-		func(caddyInstance *CaddyHttpServerInstance) {
-			err := caddyInstance.DeleteConfigById("test")
+		"myserver",
+		func(caddyCfg *CaddyCfg) {
+			err := caddyCfg.DeleteById("test")
 			if err == nil {
 				t.Errorf("Expected not found error, got %v", nil)
+			} else if !errors.Is(err, ErrNotFoundID) {
+				t.Errorf("Expected not found error, got %v", err)
 			}
 			for i := 0; i < 5; i++ {
 				id := "example.com"
@@ -176,12 +195,12 @@ func TestCaddyHttpServerInstance_ReplaceRouteConfig(t *testing.T) {
 						fmt.Sprintf("%d.example.com", i),
 					}, "/*",
 				)
-				err := caddyInstance.ReplaceRouteConfig("myserver", id, m)
+				err := caddyCfg.AddRoute("myserver", id, m)
 				if err != nil {
 					fmt.Printf("error: %v", err)
 				}
 			}
-			c, err := caddyInstance.Config()
+			c, err := caddyCfg.Config()
 			if err != nil {
 				t.Errorf("%v", err)
 			}
@@ -192,20 +211,32 @@ func TestCaddyHttpServerInstance_ReplaceRouteConfig(t *testing.T) {
 		})
 }
 
-func printConfig(caddyInstance *CaddyHttpServerInstance) {
+func printConfig(caddyCfg *CaddyCfg) {
 	fmt.Printf("-----config-----\n")
-	c, err := caddyInstance.Config()
+	c, err := caddyCfg.Config()
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println(c)
 }
 
-func printConfigById(caddyInstance *CaddyHttpServerInstance, id string) {
+func printConfigById(caddyCfg *CaddyCfg, id string) {
 	fmt.Printf("-----config %v-----\n", id)
-	c, err := caddyInstance.ConfigById(id)
+	c, err := caddyCfg.ConfigById(id)
 	if err != nil {
 		fmt.Printf("error: %v\n", err)
 	}
 	fmt.Println(c)
+}
+
+func ExampleJoinURLPath() {
+	fmt.Println(JoinURLPath("http://localhost:2019", "test"))
+	fmt.Println(JoinURLPath("http://localhost:2019/", "test"))
+	fmt.Println(JoinURLPath("http://localhost:2019/in", "test", "where", "to", "go"))
+	fmt.Println(JoinURLPath("", "test"))
+	// Output:
+	// http://localhost:2019/test
+	// http://localhost:2019/test
+	// http://localhost:2019/in/test/where/to/go
+	// test
 }

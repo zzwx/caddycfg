@@ -15,83 +15,67 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 )
 
-type CaddyHttpServerInstance struct {
-	configURL string // We trim trailing "/" for consistency
+const DefaultConfigURL = "http://localhost:2019"
+
+type CaddyCfg struct {
+	configURL httpcaddyfile.Address
 }
 
-// NewCaddyHttpServerInstance accepts caddy's configuration url,
-// by default "http://localhost:2019".
-func NewCaddyHttpServerInstance(configURL string) *CaddyHttpServerInstance {
-	configURL = strings.TrimSuffix(configURL, "/")
-	return &CaddyHttpServerInstance{
-		configURL: configURL,
+// NewCaddyCfg accepts caddy's configuration url as string.
+//
+// For default "http://localhost:2019" configuration use NewCaddyCfg(DefaultConfigURL).
+func NewCaddyCfg(configURL string) *CaddyCfg {
+	addrr, err := httpcaddyfile.ParseAddress(configURL)
+	if err != nil {
+		panic(err) // Well, I justfiy panicing here! Easy to catch and fix.
+	}
+	addr := addrr.String() // this adds "http"
+	reparsed, _ := httpcaddyfile.ParseAddress(addr)
+	return &CaddyCfg{
+		configURL: reparsed,
 	}
 }
 
-type NotFoundIDError struct {
+var (
+	// ErrNotFoundID is a base error to what errNotFoundID leads to when unwrapped,
+	// in order to check with errors.Is(err, ErrNotFoundID)
+	ErrNotFoundID = errors.New("unknown object ID")
+)
+
+// errNotFoundID stands for errors of not found object id,
+// it contains id when printed with Error, and unwraps to ErrNotFoundID to be checked using
+// errors.Is(err, ErrNotFoundID)
+type errNotFoundID struct {
 	id string
 }
 
-func NewNotFoundError(id string) *NotFoundIDError {
-	return &NotFoundIDError{
+func newNotFoundID(id string) *errNotFoundID {
+	return &errNotFoundID{
 		id: id,
 	}
 }
 
-func (n NotFoundIDError) Error() string {
+func (n errNotFoundID) Error() string {
 	return fmt.Sprintf("not found ID '%v'", n.id)
+}
+
+func (n errNotFoundID) Unwrap() error {
+	return ErrNotFoundID
 }
 
 const messageErrorUnknownObjectIDPrefix = "{\"error\":\"unknown object ID"
 
-// EmptyConfig returns a JSON string of a base configuration with:
+// UploadTo does the same as Upload, only to a custom configURL, which is usually DefaultConfigURL.
+// This is to allow to upload a new configuration on top of an empty `caddy run` that started with a 'null' configuration.
 //
-//	admin: { "listen": <caddyInstance.configURL> { ...
-//
-// and
-//
-//	apps.http.servers { "<serverKey>":
-//
-// This can be passed to CaddyHttpServerInstance.UploadConfig as initial empty configuration
-// that might be later enhanced with routes.
-func (caddyInstance *CaddyHttpServerInstance) EmptyConfig(serverKey string) string {
-	// listen doesn't like http:// or https://
-	address, err := httpcaddyfile.ParseAddress(caddyInstance.configURL)
-	if err != nil {
-		return ""
-	}
-
-	var v = `
-{
-	"admin": {
-		"listen": ` + EncodeJSONValue(address.Host+":"+address.Port) + `
-	},
-	"apps": {
-		"http": {
-			"servers": {
-				` + EncodeJSONValue(serverKey) + `: {
-					"automatic_https": {
-						"skip": []
-					},
-					"listen": [
-						":443"
-					],
-					"routes": []
-				}
-			}
-		}
-	}
-}
-`
-	return v
-}
-
-func (caddyInstance *CaddyHttpServerInstance) uploadConfigTo(configURL string, configJSON string) error {
-	r, err := http.Post(configURL+"/load", "application/json", strings.NewReader(configJSON))
+// If configJSON contains a new "admin:listen" section, it seems to retarget caddy's configURL to it for any next configuration manipulations.
+func (caddyCfg *CaddyCfg) UploadTo(configURL string, configJSON string) error {
+	r, err := http.Post(JoinURLPath(configURL, "load"), "application/json", strings.NewReader(configJSON))
 	if err != nil {
 		return err
 	}
@@ -107,23 +91,16 @@ func (caddyInstance *CaddyHttpServerInstance) uploadConfigTo(configURL string, c
 	return nil
 }
 
-// UploadConfigToDefault does the same as UploadConfig but to a "http://localhost:2019" instead of configured in
-// caddyInstance. This is to allow to upload on top of initial `caddy run` without --config file, that
-// always uses port 2019.
-func (caddyInstance *CaddyHttpServerInstance) UploadConfigToDefault(configJSON string) error {
-	return caddyInstance.uploadConfigTo("http://localhost:2019", configJSON)
+// Upload (in Caddy terms "load") is sending full configuration that will replace
+// the existing one completely. It might be good for a base configuration.
+func (caddyCfg *CaddyCfg) Upload(configJSON string) error {
+	return caddyCfg.UploadTo(caddyCfg.configURL.String(), configJSON)
 }
 
-// UploadConfig (in Caddy terms "load") is sending full configuration that will replace
-// the existing one completely. It might be good for a begin configuration.
-func (caddyInstance *CaddyHttpServerInstance) UploadConfig(configJSON string) error {
-	return caddyInstance.uploadConfigTo(caddyInstance.configURL, configJSON)
-}
-
-// Config returns full configuration of CaddyHttpServerInstance, including
+// Config returns full configuration of CaddyCfg, including
 // root node. Trailing "\n" will be removed.
-func (caddyInstance *CaddyHttpServerInstance) Config() (string, error) {
-	loadConfig, err := http.Get(caddyInstance.configURL + "/config/")
+func (caddyCfg *CaddyCfg) Config() (string, error) {
+	loadConfig, err := http.Get(JoinURLPath(caddyCfg.configURL.String(), "config"))
 	if err != nil {
 		return "", err
 	}
@@ -137,9 +114,9 @@ func (caddyInstance *CaddyHttpServerInstance) Config() (string, error) {
 
 // ConfigById returns configurtation section belonging to a marked by "@id" section in a JSON string format. Trailing "\n" will be removed.
 //
-// If not finding the object by id error occurs, it will be converted into a NotFoundIDError.
-func (caddyInstance *CaddyHttpServerInstance) ConfigById(id string) (string, error) {
-	loadConfig, err := http.Get(caddyInstance.configURL + "/id/" + url.PathEscape(id))
+// If not finding the object by id error occurs, it will be converted into a errNotFoundID.
+func (caddyCfg *CaddyCfg) ConfigById(id string) (string, error) {
+	loadConfig, err := http.Get(JoinURLPath(caddyCfg.configURL.String(), "id", url.PathEscape(id)))
 	if err != nil {
 		return "", err
 	}
@@ -151,17 +128,18 @@ func (caddyInstance *CaddyHttpServerInstance) ConfigById(id string) (string, err
 	s := string(b)
 
 	if strings.HasPrefix(s, messageErrorUnknownObjectIDPrefix) {
-		return "", NewNotFoundError(id)
+		return "", newNotFoundID(id)
 	}
 	return strings.TrimSuffix(s, "\n"), nil
 }
 
-// DeleteConfigById attempts to delete config by specified id.
+// DeleteById attempts to delete a config by specified id. In theory this should work
+// for any section of configuration, but here it's only used to remove routes.
 //
-// If not finding the object by id error occurs, it will be converted into a NotFoundIDError.
-func (caddyInstance *CaddyHttpServerInstance) DeleteConfigById(id string) error {
+// If not finding the object by id error occurs, it will be converted into a errNotFoundID.
+func (caddyCfg *CaddyCfg) DeleteById(id string) error {
 	client := http.DefaultClient
-	configUrl := caddyInstance.configURL + "/id/" + url.PathEscape(id)
+	configUrl := JoinURLPath(caddyCfg.configURL.String(), "id", url.PathEscape(id))
 
 	req, err := http.NewRequest(http.MethodDelete, configUrl, bytes.NewBuffer(nil))
 	//req.Header.Set("Content-Type", "application/json")
@@ -182,7 +160,7 @@ func (caddyInstance *CaddyHttpServerInstance) DeleteConfigById(id string) error 
 	}
 	s := string(b)
 	if strings.HasPrefix(s, messageErrorUnknownObjectIDPrefix) {
-		return NewNotFoundError(id)
+		return newNotFoundID(id)
 	}
 	return nil
 }
@@ -191,10 +169,12 @@ type IDField struct {
 	Id string `json:"@id"`
 }
 
-// ReplaceRouteConfig replaces configuration marked by unique route config "@id" field specified by routeId.
-// A good candidate for routeId could be domain name.
+// AddRoute ensures that configuration marked by unique route config "@id" field specified by routeId enters caddy's configuration.
+// A good candidate for routeId is a domain name.
 //
-// This function first deletes configuration (ignoring errors) and then adds it again, to keep only one configuration for this route.
+// This function first pokes caddy for current configuration on "@id" to see if it matches passed routeConfig byte-to-byte.
+// If it does, it simply skips the change, otherwise deletes configuration (ignoring errors) and then adds it again, to keep only
+// one configuration for this route "@id".
 //
 // serverKey is arbitrary name in the base configuration for the http/servers enty. By default it's usually "myserver". Lookup base
 // configuration for the right key.
@@ -204,8 +184,7 @@ type IDField struct {
 //			"http": {
 //				"servers": {
 //					"<serverKey>":
-func (caddyInstance *CaddyHttpServerInstance) ReplaceRouteConfig(serverKey string, routeId string, routeConfig *caddyhttp.Route) error {
-	_ = caddyInstance.DeleteConfigById(routeId)
+func (caddyCfg *CaddyCfg) AddRoute(serverKey string, routeId string, routeConfig *caddyhttp.Route) error {
 	config, err := json.Marshal(routeConfig)
 	if err != nil {
 		return err
@@ -213,11 +192,27 @@ func (caddyInstance *CaddyHttpServerInstance) ReplaceRouteConfig(serverKey strin
 
 	cfg := string(config)
 
-	// Prepend config with "@id" by brutally forcing it into JSON
-	cfg = strings.Replace(cfg, "{", "{\n\t"+EncodeAtId(routeId)+",", 1)
+	// Prepend config with "@id" by brutally forcing it into JSON, as caddyhttp.Route has no
+	// field for it.
+	cfg = strings.Replace(cfg, "{", fmt.Sprintf("{\n\t%v,", EncodeAtId(routeId)), 1)
 
-	requestPatch, err := http.Post(caddyInstance.configURL+"/config/apps/http/servers/"+
-		url.PathEscape(serverKey)+"/routes/", "application/json", strings.NewReader(cfg))
+	current, err := caddyCfg.ConfigById(routeId)
+	if err == nil { // including errNotFoundID
+		if cfg == current {
+			return nil
+		} else {
+			_ = caddyCfg.DeleteById(routeId)
+		}
+	}
+
+	requestPatch, err := http.Post(
+		JoinURLPath(
+			caddyCfg.configURL.String(),
+			"config", "apps", "http", "servers", url.PathEscape(serverKey), "/routes/",
+		),
+		"application/json",
+		strings.NewReader(cfg),
+	)
 	if err != nil {
 		return err
 	}
@@ -270,7 +265,57 @@ func EncodeAtId(id string) string {
 	return stripped
 }
 
-// EncodeJSONValue returns "value" properly escaped for JSON and surrounded with quotes.
-func EncodeJSONValue(value string) string {
+// EncodeJSONString returns "value" properly escaped for JSON and surrounded with quotes.
+func EncodeJSONString(value string) string {
 	return strings.TrimPrefix(EncodeAtId(value), `"@id":`)
+}
+
+// BaseConfig returns a JSON string of a base configuration with :443 listen port and empty routes array:
+//
+//	"admin": { "listen": <caddyCfg.configURL> { ...
+//	"apps"."http"."servers" { "<serverKey>": ...
+//	                          "listen": [":443"]
+//                            "routes": []
+//
+// This can be passed to CaddyCfg.Upload as initial empty configuration
+// that might be later enhanced with routes.
+func BaseConfig(configURL string, serverKey string) string {
+	c := NewCaddyCfg(configURL)
+	// "listen" doesn't like http:// or https://
+	address := c.configURL
+	address.Scheme = ""
+	str := address.String() // still adds http:// or https://
+	str = strings.TrimPrefix(str, "http://")
+	str = strings.TrimPrefix(str, "https://")
+	return `{
+	"admin": {
+		"listen": ` + EncodeJSONString(str) + `
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				` + EncodeJSONString(serverKey) + `: {
+					"automatic_https": {
+						"skip": []
+					},
+					"listen": [
+						":443"
+					],
+					"routes": []
+				}
+			}
+		}
+	}
+}
+`
+}
+
+// JoinURLPath ignores any url_ parsing errors
+func JoinURLPath(url_ string, paths ...string) string {
+	u, err := url.Parse(url_)
+	if err != nil {
+		return strings.TrimSuffix(url_, "/") + "/" + path.Join(paths...)
+	}
+	u.Path = path.Join(append([]string{u.Path}, paths...)...)
+	return u.String()
 }
