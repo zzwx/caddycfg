@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -32,14 +31,14 @@ type CaddyCfg struct {
 //
 // For default "http://localhost:2019" configuration use NewCaddyCfg(DefaultConfigURL).
 func NewCaddyCfg(configURL string) *CaddyCfg {
-	addrr, err := httpcaddyfile.ParseAddress(configURL)
+	a, err := httpcaddyfile.ParseAddress(configURL)
 	if err != nil {
-		panic(err) // Well, I justfiy panicing here! Easy to catch and fix.
+		panic(err) // Well, I justify panicking here! Easy to catch and fix.
 	}
-	addr := addrr.String() // this adds "http"
-	reparsed, _ := httpcaddyfile.ParseAddress(addr)
+	aa := a.String() // this adds "http"
+	r, _ := httpcaddyfile.ParseAddress(aa)
 	return &CaddyCfg{
-		configURL: reparsed,
+		configURL: r,
 	}
 }
 
@@ -114,7 +113,8 @@ func (caddyCfg *CaddyCfg) Config() (string, error) {
 	return strings.TrimSuffix(string(b), "\n"), nil
 }
 
-// ConfigById returns configurtation section belonging to a marked by "@id" section in a JSON string format. Trailing "\n" will be removed.
+// ConfigById returns configuration section belonging to a marked by "@id" section in a JSON string format.
+// Trailing "\n" will be removed.
 //
 // If not finding the object by id error occurs, it will be converted into a errNotFoundID.
 func (caddyCfg *CaddyCfg) ConfigById(id string) (string, error) {
@@ -171,31 +171,14 @@ type IDField struct {
 	Id string `json:"@id"`
 }
 
-type RoutConfigType struct {
-	Id    string `json:"@id"`
-	Match []struct {
-		Host []string `json:"host"`
-		Path []string `json:"path"`
-	} `json:"match"`
-	Handle []struct {
-		Handler   string `json:"handler"`
-		Transport struct {
-			Protocol string `json:"protocol"`
-		} `json:"transport"`
-		Upstreams []struct {
-			Dial string `json:"dial"`
-		} `json:"upstreams"`
-	} `json:"handle"`
-}
-
 // AddRoute ensures that configuration marked by unique route config "@id" field specified by routeId enters caddy's configuration.
 // A good candidate for routeId is a domain name.
 //
 // To avoid any downtime, this function first pokes caddy for current configuration on "@id" to see if it matches routeConfig
-// either byte-to-byte or by structure. This allows to skip any modifications.
+// either byte-to-byte or by structure. This allows to skip unnecessary deletion/addition described below.
 //
-// Otherwise, configuration for "@id" get deleted (ignoring errors) and then get added again, to keep only
-// one configuration for this route "@id".
+// In case configuration is not found or doesn't match, it will be attempted to be deleted using "@id" key (ignoring errors)
+// and then get added, to keep only one configuration for this routeId.
 //
 // serverKey is an arbitrary name in the base configuration for the "apps"."http"."servers" entry. Default value is usually "myserver".
 //
@@ -221,26 +204,8 @@ func (caddyCfg *CaddyCfg) AddRoute(serverKey string, routeId string, routeConfig
 
 	current, err := caddyCfg.ConfigById(routeId)
 	if err == nil { // including errNotFoundID
-		if cfg == current {
-			// This is rare that they both simply be equal, as they seem to be marshalled differently by Caddy
-			// when requested.
+		if RouteConfigsEqual(cfg, current) {
 			return nil
-		} else {
-			// We have to try to compare them structurally.
-			decCfg := json.NewDecoder(strings.NewReader(cfg))
-			var cfgJson RoutConfigType
-			err := decCfg.Decode(&cfgJson)
-			if err == nil {
-				decCurrent := json.NewDecoder(strings.NewReader(current))
-				var currentJson RoutConfigType
-				err := decCurrent.Decode(&currentJson)
-				if err == nil {
-					// Now we can compare two objects
-					if reflect.DeepEqual(cfgJson, currentJson) {
-						return nil
-					}
-				}
-			}
 		}
 	}
 
@@ -366,7 +331,9 @@ func JoinURLPath(url_ string, paths ...string) string {
 	return u.String()
 }
 
-// Refresher runs refresh immediately and then indefinitely repeats after refreshDelay.
+// Refresher calls passed refresh immediately and then calls it continuously after refreshDelay.
+//
+// This will likely be run in a separate Goroutine.
 func Refresher(refreshDelay time.Duration, refresh func()) {
 	ticker := time.NewTicker(refreshDelay)
 	defer ticker.Stop()
