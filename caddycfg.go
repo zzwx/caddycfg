@@ -19,6 +19,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const DefaultConfigURL = "http://localhost:2019"
@@ -190,18 +191,22 @@ type RoutConfigType struct {
 // AddRoute ensures that configuration marked by unique route config "@id" field specified by routeId enters caddy's configuration.
 // A good candidate for routeId is a domain name.
 //
-// This function first pokes caddy for current configuration on "@id" to see if it matches passed routeConfig byte-to-byte.
-// If it does, it simply skips the change, otherwise deletes configuration (ignoring errors) and then adds it again, to keep only
+// To avoid any downtime, this function first pokes caddy for current configuration on "@id" to see if it matches routeConfig
+// either byte-to-byte or by structure. This allows to skip any modifications.
+//
+// Otherwise, configuration for "@id" get deleted (ignoring errors) and then get added again, to keep only
 // one configuration for this route "@id".
 //
-// serverKey is arbitrary name in the base configuration for the http/servers enty. By default it's usually "myserver". Lookup base
-// configuration for the right key.
+// serverKey is an arbitrary name in the base configuration for the "apps"."http"."servers" entry. Default value is usually "myserver".
+//
+// Look up base configuration for the right key.
 //
 //	{
 //		"apps": {
 //			"http": {
 //				"servers": {
 //					"<serverKey>":
+//
 func (caddyCfg *CaddyCfg) AddRoute(serverKey string, routeId string, routeConfig *caddyhttp.Route) error {
 	config, err := json.Marshal(routeConfig)
 	if err != nil {
@@ -246,7 +251,7 @@ func (caddyCfg *CaddyCfg) AddRoute(serverKey string, routeId string, routeConfig
 	requestPatch, err := http.Post(
 		JoinURLPath(
 			caddyCfg.configURL.String(),
-			"config", "apps", "http", "servers", url.PathEscape(serverKey), "/routes/",
+			"config", "apps", "http", "servers", url.PathEscape(serverKey), "routes",
 		),
 		"application/json",
 		strings.NewReader(cfg),
@@ -352,8 +357,32 @@ func BaseConfig(configURL string, serverKey string) string {
 func JoinURLPath(url_ string, paths ...string) string {
 	u, err := url.Parse(url_)
 	if err != nil {
+		if len(paths) == 0 {
+			return strings.TrimSuffix(url_, "/")
+		}
 		return strings.TrimSuffix(url_, "/") + "/" + path.Join(paths...)
 	}
 	u.Path = path.Join(append([]string{u.Path}, paths...)...)
 	return u.String()
+}
+
+// Refresher runs refresh immediately and then indefinitely repeats after refreshDelay.
+func Refresher(refreshDelay time.Duration, refresh func()) {
+	ticker := time.NewTicker(refreshDelay)
+	defer ticker.Stop()
+
+	done := make(chan bool)
+	//go func() {
+	//	// done <- true
+	//}()
+
+	refresh()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			refresh()
+		}
+	}
 }
