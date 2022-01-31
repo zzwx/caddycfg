@@ -11,8 +11,8 @@ import (
 // named parameters.
 func RouteConfigsEqual(cfg0, cfg1 string) bool {
 	if cfg0 == cfg1 {
-		// This is rare that they both simply be equal, as they seem to be marshalled differently by Caddy
-		// when requested.
+		// This is rare that they both simply be equal like this, as they seem to be marshalled differently by Caddy
+		// when configuration is requested vs when it's pushed.
 		return true
 	}
 	// We have to try to compare them structurally.

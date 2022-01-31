@@ -33,7 +33,7 @@ type CaddyCfg struct {
 func NewCaddyCfg(configURL string) *CaddyCfg {
 	a, err := httpcaddyfile.ParseAddress(configURL)
 	if err != nil {
-		panic(err) // Well, I justify panicking here! Easy to catch and fix.
+		panic(err) // Panicking is justified here. See time.NewTicker for an example.
 	}
 	aa := a.String() // this adds "http"
 	r, _ := httpcaddyfile.ParseAddress(aa)
