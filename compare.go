@@ -35,7 +35,7 @@ func RouteConfigsEqual(cfg0, cfg1 string) bool {
 
 // RouteConfigType is used to compare route configurations.
 type RouteConfigType struct {
-	// TODO: It must eventually grow to fill that gaps
+	// TODO: It must eventually grow to fill the gaps
 	Id    string `json:"@id"`
 	Match []struct {
 		Host []string `json:"host"`
