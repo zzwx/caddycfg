@@ -153,7 +153,7 @@ func runWithinManagedCaddy(configFile string, configURL string, serverKey string
 	var caddyCfg = NewCaddyCfg(configURL)
 	if configFile == "" {
 		base := BaseConfig(configURL, serverKey)
-		err := caddyCfg.UploadTo(DefaultConfigURL, base)
+		err := caddyCfg.UploadTo(CaddyConfigURL, base)
 		if err != nil {
 			panic(err)
 		}

@@ -19,17 +19,19 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/antlr/antlr4/runtime/Go/antlr"
 )
 
-const DefaultConfigURL = "http://localhost:2019"
+const CaddyConfigURL = "http://localhost:2019"
 
 type CaddyCfg struct {
 	configURL httpcaddyfile.Address
 }
 
-// NewCaddyCfg accepts caddy's configuration url as string.
+// NewCaddyCfg creates Caddy's configuration, with Caddy configuration url as argument.
 //
-// For default "http://localhost:2019" configuration use NewCaddyCfg(DefaultConfigURL).
+// For default "http://localhost:2019" configuration use NewCaddyCfg(CaddyConfigURL).
 func NewCaddyCfg(configURL string) *CaddyCfg {
 	a, err := httpcaddyfile.ParseAddress(configURL)
 	if err != nil {
@@ -71,10 +73,10 @@ func (n errNotFoundID) Unwrap() error {
 
 const messageErrorUnknownObjectIDPrefix = "{\"error\":\"unknown object ID"
 
-// UploadTo does the same as Upload, only to a custom configURL, which is usually DefaultConfigURL.
-// This is to allow to upload a new configuration on top of an empty `caddy run` that started with a 'null' configuration.
+// UploadTo does the same as Upload, only to a custom configURL, which usually equals CaddyConfigURL.
+// This allows for uploading a new configuration on top of an empty `caddy run` that started with a 'null' configuration.
 //
-// If configJSON contains a new "admin:listen" section, it seems to retarget caddy's configURL to it for any next configuration manipulations.
+// If configJSON contains a new "admin:listen" section, it seems to retarget Caddy's configURL to it for any next configuration manipulations.
 func (caddyCfg *CaddyCfg) UploadTo(configURL string, configJSON string) error {
 	r, err := http.Post(JoinURLPath(configURL, "load"), "application/json", strings.NewReader(configJSON))
 	if err != nil {
@@ -171,10 +173,10 @@ type IDField struct {
 	Id string `json:"@id"`
 }
 
-// AddRoute ensures that configuration marked by unique route config "@id" field specified by routeId enters caddy's configuration.
+// AddRoute ensures that configuration marked by unique route config "@id" field specified by routeId enters Caddy's configuration.
 // A good candidate for routeId is a domain name.
 //
-// To avoid any downtime, this function first pokes caddy for current configuration on "@id" to see if it matches routeConfig
+// To avoid any downtime, this function first pokes Caddy for current configuration on "@id" to see if it matches routeConfig
 // either byte-to-byte or by structure. This allows to skip unnecessary deletion/addition described below.
 //
 // In case configuration is not found or doesn't match, it will be attempted to be deleted using "@id" key (ignoring errors)
@@ -331,9 +333,9 @@ func JoinURLPath(url_ string, paths ...string) string {
 	return u.String()
 }
 
-// Refresher calls passed refresh immediately and then calls it continuously after refreshDelay.
+// Refresher calls the passed refresh first immediately and then continuously after refreshDelay.
 //
-// This will likely be run in a separate Goroutine.
+// This will likely run in a separate Goroutine.
 func Refresher(refreshDelay time.Duration, refresh func()) {
 	ticker := time.NewTicker(refreshDelay)
 	defer ticker.Stop()
@@ -352,4 +354,8 @@ func Refresher(refreshDelay time.Duration, refresh func()) {
 			refresh()
 		}
 	}
+}
+
+func Dummy() {
+	_ = antlr.NewIntervalSet()
 }

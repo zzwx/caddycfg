@@ -1,6 +1,6 @@
 # caddycfg
 
-Tiny library to modify `caddy` server's configuration from the web sites themselves.
+A small library that helps modify [`Caddy`](https://caddyserver.com/) server's configuration from a web app.
 
 ## Installation
 
@@ -8,13 +8,13 @@ Tiny library to modify `caddy` server's configuration from the web sites themsel
 
 ## Motivation
 
-Playing with `caddy` global configuration made me feel that it would be cool for them to be modular. There might be better solutions for this workflow, but this is what works for my small projects.
+Maintaining `Caddy` global configuration for several web apps may become cumbersome. Having each web app directly configure `Caddy` makes it possible to completely stop thinking about updating `Caddy` manually.
 
-It's a work-in-progress project. Feel free to comment or enhance with pull requests.
+This is a work-in-progress project. Feel free to comment or enhance with pull requests.
 
 ## Tests Notes
 
-The tests assume that the `caddy` server is available.
+The tests assume that a `Caddy` server is running on the testing site.
 
 ## Usage Example
 
