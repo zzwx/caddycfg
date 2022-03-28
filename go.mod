@@ -2,12 +2,12 @@ module github.com/zzwx/caddycfg
 
 go 1.18
 
-require (
-	github.com/antlr/antlr4/runtime/Go/antlr v0.0.0-20220314183648-97c793e446ba
-	github.com/caddyserver/caddy/v2 v2.5.0-beta.1.0.20220325185629-b4f1a713978f
-)
+require github.com/caddyserver/caddy/v2 v2.5.0-beta.1.0.20220325185629-b4f1a713978f
 
-retract v0.0.5
+retract (
+	v0.0.6
+	v0.0.5
+)
 
 require (
 	cloud.google.com/go/iam v0.3.0 // indirect
@@ -17,6 +17,7 @@ require (
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.1.1 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.2 // indirect
+	github.com/antlr/antlr4/runtime/Go/antlr v0.0.0-20220314183648-97c793e446ba // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/caddyserver/certmagic v0.16.0 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
@@ -90,7 +91,7 @@ require (
 	github.com/smallstep/truststore v0.11.0 // indirect
 	github.com/spf13/cast v1.4.1 // indirect
 	github.com/stoewer/go-strcase v1.2.0 // indirect
-	github.com/tailscale/tscert v0.0.0-20220125204807-4509a5fbaf74 // indirect
+	github.com/tailscale/tscert v0.0.0-20220316030059-54bbcb9f74e2 // indirect
 	github.com/urfave/cli v1.22.5 // indirect
 	go.etcd.io/bbolt v1.3.6 // indirect
 	go.mozilla.org/pkcs7 v0.0.0-20210826202110-33d05740a352 // indirect

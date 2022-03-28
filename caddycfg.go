@@ -19,8 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/antlr/antlr4/runtime/Go/antlr"
 )
 
 const CaddyConfigURL = "http://localhost:2019"
@@ -354,8 +352,4 @@ func Refresher(refreshDelay time.Duration, refresh func()) {
 			refresh()
 		}
 	}
-}
-
-func Dummy() {
-	_ = antlr.NewIntervalSet()
 }
