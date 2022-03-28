@@ -4,7 +4,7 @@ A small library that helps modify [`Caddy`](https://caddyserver.com/) server's c
 
 ## Installation
 
-`go get github.com/zzwx/caddycfg@master`
+`go get -u github.com/zzwx/caddycfg`
 
 ## Motivation
 
