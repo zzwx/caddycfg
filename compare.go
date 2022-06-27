@@ -4,7 +4,13 @@ import (
 	"encoding/json"
 	"reflect"
 	"strings"
+
+	"github.com/antlr/antlr4/runtime/Go/antlr"
 )
+
+func _unsuedFunction() {
+	var _ antlr.ATNConfig
+}
 
 // RouteConfigsEqual compares two configurations that can
 // be decoded into RouteConfigType, allowing for shuffled
