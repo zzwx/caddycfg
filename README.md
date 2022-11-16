@@ -1,4 +1,4 @@
-# caddycfg
+[![GoDoc](http://img.shields.io/badge/go-documentation-blue.svg?style=flat-square)](https://pkg.go.dev/github.com/zzwx/caddycfg)
 
 A small library that helps modify [`Caddy`](https://caddyserver.com/) server's configuration from a web app.
 
